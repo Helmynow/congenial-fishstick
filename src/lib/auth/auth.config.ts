@@ -30,8 +30,8 @@ export const authOptions: NextAuthOptions = {
     error: '/auth/error',
   },
   callbacks: {
-    async session({ session, user }) {
-      if (session.user) {
+    async jwt({ token, user }) {
+      if (user) {
         const dbUser = await prisma.user.findUnique({
           where: { id: user.id },
           select: {
@@ -46,22 +46,32 @@ export const authOptions: NextAuthOptions = {
         });
         
         if (dbUser) {
-          session.user = {
-            ...session.user,
-            id: dbUser.id,
-            role: dbUser.role,
-            segment: dbUser.segment,
-            title: dbUser.title,
-            department: dbUser.department,
-          };
+          token.id = dbUser.id;
+          token.role = dbUser.role;
+          token.segment = dbUser.segment;
+          token.title = dbUser.title;
+          token.department = dbUser.department;
         }
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      if (session.user) {
+        session.user = {
+          ...session.user,
+          id: token.id as string,
+          role: token.role,
+          segment: token.segment,
+          title: token.title,
+          department: token.department,
+        };
       }
       return session;
     },
   },
   secret: process.env.NEXTAUTH_SECRET,
   session: {
-    strategy: 'database',
+    strategy: 'jwt',
   },
   debug: process.env.NODE_ENV === 'development',
 };
