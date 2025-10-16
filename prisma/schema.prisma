@@ -57,6 +57,48 @@ model VerificationToken {
 // ============================================================================
 
 enum UserRole {
+  CEO // Superadmin
+  PC // People & Culture (Admin)
+  LEAD // Leadership (Nominator/Voter/Rater)
+  STAFF // Regular staff
+}
+
+enum UserSegment {
+  Language // Language Division (Blues)
+  International // International (Greens)
+  Whole // Whole school
+}
+
+model User {
+  id            String      @id @default(cuid())
+  email         String      @unique
+  name          String?
+  role          UserRole    @default(STAFF)
+  segment       UserSegment @default(Whole)
+  title         String?
+  department    String?
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  // Relations
+  accounts Account[]
+  sessions Session[]
+
+  // EOM Relations
+  nominations         EomNomination[] @relation("Nominator")
+  receivedNominations EomNomination[] @relation("Nominee")
+  votes               EomVote[]
+  wins                EomWinner[]
+
+  // MRE Relations
+  raterAssignments  MreAssignment[] @relation("Rater")
+  targetAssignments MreAssignment[] @relation("Target")
+
+  // Activity
+  activityLogs  ActivityLog[]
+  notifications Notification[]
   CEO    // Superadmin
   PC     // People & Culture (Admin)
   LEAD   // Leadership (Nominator/Voter/Rater)
@@ -108,6 +150,13 @@ model User {
 // ============================================================================
 
 model EomCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  active      Boolean  @default(true)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+
   id          String          @id @default(cuid())
   name        String          @unique
   description String?
@@ -131,6 +180,16 @@ enum EomCycleStatus {
 }
 
 model EomCycle {
+  id        String         @id @default(cuid())
+  year      Int
+  month     Int // 1-12
+  term      String // e.g., "2025-T1"
+  status    EomCycleStatus @default(DRAFT)
+  openedAt  DateTime?
+  closedAt  DateTime?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
   id          String          @id @default(cuid())
   year        Int
   month       Int             // 1-12
@@ -150,11 +209,22 @@ model EomCycle {
 }
 
 model EomNomination {
+  id           String    @id @default(cuid())
   id           String      @id @default(cuid())
   cycleId      String
   categoryId   String
   nomineeId    String
   nominatorId  String
+  reason       String    @db.Text
+  verifiedByPC Boolean   @default(false)
+  verifiedAt   DateTime?
+  verifiedById String?
+  createdAt    DateTime  @default(now())
+
+  cycle     EomCycle    @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  category  EomCategory @relation(fields: [categoryId], references: [id])
+  nominee   User        @relation("Nominee", fields: [nomineeId], references: [id])
+  nominator User        @relation("Nominator", fields: [nominatorId], references: [id])
   reason       String      @db.Text
   verifiedByPC Boolean     @default(false)
   verifiedAt   DateTime?
@@ -177,6 +247,7 @@ model EomVote {
   voterId    String
   nomineeId  String
   createdAt  DateTime @default(now())
+
   
   cycle    EomCycle    @relation(fields: [cycleId], references: [id], onDelete: Cascade)
   category EomCategory @relation(fields: [categoryId], references: [id])
@@ -195,6 +266,7 @@ model EomWinner {
   approvedAt    DateTime?
   announcedOn   DateTime?
   createdAt     DateTime  @default(now())
+
   
   cycle    EomCycle    @relation(fields: [cycleId], references: [id], onDelete: Cascade)
   category EomCategory @relation(fields: [categoryId], references: [id])
@@ -220,6 +292,17 @@ enum MreTargetGroup {
 }
 
 model MreCycle {
+  id        String         @id @default(cuid())
+  code      String         @unique // e.g., "2024-R1"
+  opensAt   DateTime
+  closesAt  DateTime
+  status    MreCycleStatus @default(DRAFT)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  assignments    MreAssignment[]
+  weightMatrices MreWeightMatrix[]
+  domainWeights  MreDomainWeight[]
   id          String          @id @default(cuid())
   code        String          @unique // e.g., "2024-R1"
   opensAt     DateTime
@@ -239,6 +322,7 @@ model MreRaterContext {
   id    String @id @default(cuid())
   code  String @unique // CEO, PC, MANAGER, PEER, QA, HOD, PRINCIPAL, SELF
   label String
+
   
   weightMatrices MreWeightMatrix[]
   domainWeights  MreDomainWeight[]
@@ -248,6 +332,17 @@ model MreRaterContext {
 }
 
 model MreWeightMatrix {
+  id             String         @id @default(cuid())
+  cycleId        String
+  targetGroup    MreTargetGroup
+  raterContextId String
+  weight         Int // percentage
+  required       Boolean        @default(true)
+  min            Int            @default(1)
+  max            Int?
+
+  cycle        MreCycle        @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  raterContext MreRaterContext @relation(fields: [raterContextId], references: [id])
   id              String         @id @default(cuid())
   cycleId         String
   targetGroup     MreTargetGroup
@@ -268,6 +363,7 @@ model MreDomain {
   id    String @id @default(cuid())
   code  String @unique
   label String
+
   
   domainWeights MreDomainWeight[]
   domainScores  MreDomainScore[]
@@ -276,6 +372,16 @@ model MreDomain {
 }
 
 model MreDomainWeight {
+  id             String         @id @default(cuid())
+  cycleId        String
+  targetGroup    MreTargetGroup
+  raterContextId String
+  domainId       String
+  weight         Int // percentage
+
+  cycle        MreCycle        @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  raterContext MreRaterContext @relation(fields: [raterContextId], references: [id])
+  domain       MreDomain       @relation(fields: [domainId], references: [id])
   id              String         @id @default(cuid())
   cycleId         String
   targetGroup     MreTargetGroup
@@ -297,6 +403,20 @@ enum MreAssignmentStatus {
 }
 
 model MreAssignment {
+  id             String              @id @default(cuid())
+  cycleId        String
+  raterId        String
+  targetId       String
+  raterContextId String
+  status         MreAssignmentStatus @default(PENDING)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  cycle        MreCycle        @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  rater        User            @relation("Rater", fields: [raterId], references: [id])
+  target       User            @relation("Target", fields: [targetId], references: [id])
+  raterContext MreRaterContext @relation(fields: [raterContextId], references: [id])
+  evaluation   MreEvaluation?
   id              String              @id @default(cuid())
   cycleId         String
   raterId         String
@@ -317,6 +437,11 @@ model MreAssignment {
 }
 
 model MreEvaluation {
+  id           String   @id @default(cuid())
+  assignmentId String   @unique
+  composite    Decimal  @db.Decimal(5, 2)
+  submittedAt  DateTime @default(now())
+
   id            String   @id @default(cuid())
   assignmentId  String   @unique
   composite     Decimal  @db.Decimal(5, 2)
@@ -329,6 +454,11 @@ model MreEvaluation {
 }
 
 model MreDomainScore {
+  id           String @id @default(cuid())
+  evaluationId String
+  domainId     String
+  score        Int // 1-5 Likert scale
+
   id            String @id @default(cuid())
   evaluationId  String
   domainId      String
@@ -351,6 +481,7 @@ model ActivityLog {
   action    String
   meta      Json?
   createdAt DateTime @default(now())
+
   
   actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
 
@@ -367,6 +498,13 @@ model Settings {
 }
 
 model Notification {
+  id      String    @id @default(cuid())
+  userId  String
+  type    String
+  payload Json
+  sentAt  DateTime  @default(now())
+  readAt  DateTime?
+
   id        String    @id @default(cuid())
   userId    String
   type      String
