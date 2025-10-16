@@ -7,6 +7,7 @@ const nextConfig = {
     },
   },
   // i18n handled by next-intl middleware
+  output: 'standalone',
 };
 
 module.exports = nextConfig;
