@@ -38,11 +38,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
       - name: Install dependencies
         run: |
-          if [ -f package-lock.json ]; then npm ci; else npm i; fi
+          if [ -f package.json ]; then
+            if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          else
+            echo "No package.json found, skipping dependency installation"
+          fi
       - name: Run Codex
         uses: openai/codex-action@main
         id: codex
@@ -52,7 +55,12 @@ jobs:
           codex_args: '["--config","sandbox_mode=\"workspace-write\""]'
 
       - name: Verify tests
-        run: npm test --silent
+        run: |
+          if [ -f package.json ]; then
+            npm test --silent
+          else
+            echo "No package.json found, skipping test verification"
+          fi
 
       - name: Create pull request with fixes
         if: success()
