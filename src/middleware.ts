@@ -1,53 +1,72 @@
-import { withAuth } from 'next-auth/middleware';
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { getToken } from 'next-auth/jwt';
 
-export default withAuth({
-  callbacks: {
-    authorized({ req, token }) {
-      const pathname = req.nextUrl.pathname;
-
-      // Public routes
-      if (
-        pathname.startsWith('/auth') ||
-        pathname.startsWith('/eom/winners') ||
-        pathname.startsWith('/help') ||
-        pathname.startsWith('/_next') ||
-        pathname.startsWith('/api/auth')
-      ) {
-        return true;
-      }
-
-      // All other routes require authentication
-      if (!token) {
-        return false;
-      }
-
-      // Admin routes
-      if (pathname.startsWith('/admin')) {
-        return token.role === 'CEO' || token.role === 'PC';
-      }
-
-      // EOM nomination and voting
-      if (pathname.startsWith('/eom/nominate') || pathname.startsWith('/eom/vote')) {
-        return ['CEO', 'PC', 'LEAD'].includes(token.role as string);
-      }
-
-      return true;
-    },
-  },
-  pages: {
-    signIn: '/auth/signin',
-  },
-});
+export async function middleware(request: NextRequest) {
+  const path = request.nextUrl.pathname;
+  
+  // Exclude paths that don't require authentication
+  const publicPaths = [
+    '/auth/signin',
+    '/auth/verify',
+    '/auth/error',
+    '/api/auth',
+    '/eom/winners',
+    '/help',
+  ];
+  
+  const isPublicPath = publicPaths.some(
+    (pp) => path === pp || path.startsWith(`${pp}/`)
+  );
+  
+  if (isPublicPath) {
+    return NextResponse.next();
+  }
+  
+  // Check for auth token
+  try {
+    const token = await getToken({
+      req: request,
+      secret: process.env.NEXTAUTH_SECRET,
+    });
+    
+    // If no token, redirect to signin
+    if (!token) {
+      const url = new URL('/auth/signin', request.url);
+      url.searchParams.set('callbackUrl', encodeURI(request.url));
+      return NextResponse.redirect(url);
+    }
+    
+    // Role-based path restrictions
+    const adminOnlyPaths = ['/admin', '/settings/system'];
+    const userRole = token.role as string;
+    
+    if (adminOnlyPaths.some(p => path.startsWith(p)) && 
+        !['CEO', 'PC'].includes(userRole)) {
+      return NextResponse.redirect(new URL('/unauthorized', request.url));
+    }
+    
+    // EOM nomination and voting restrictions
+    const eomRestrictedPaths = ['/eom/nominate', '/eom/vote'];
+    if (eomRestrictedPaths.some(p => path.startsWith(p)) &&
+        !['CEO', 'PC', 'LEAD'].includes(userRole)) {
+      return NextResponse.redirect(new URL('/', request.url));
+    }
+    
+    // Continue if authenticated and authorized
+    return NextResponse.next();
+  } catch (error) {
+    console.error('Auth middleware error:', error);
+    
+    // In case of error, redirect to error page
+    const url = new URL('/auth/error', request.url);
+    url.searchParams.set('error', 'Configuration');
+    return NextResponse.redirect(url);
+  }
+}
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - api (API routes)
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     */
-    '/((?!_next/static|_next/image|favicon.ico).*)',
+    '/((?!_next/static|_next/image|favicon.ico|public/).*)',
   ],
 };

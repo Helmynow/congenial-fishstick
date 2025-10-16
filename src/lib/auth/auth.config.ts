@@ -3,6 +3,7 @@ import { PrismaAdapter } from '@auth/prisma-adapter';
 import EmailProvider from 'next-auth/providers/email';
 import GoogleProvider from 'next-auth/providers/google';
 import { prisma } from '@/lib/db';
+import { UserRole, UserSegment } from '@prisma/client';
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma) as any,
@@ -12,6 +13,15 @@ export const authOptions: NextAuthOptions = {
           EmailProvider({
             server: process.env.EMAIL_SERVER,
             from: process.env.EMAIL_FROM || 'noreply@ese-school.edu.eg',
+            // Development console logging for magic links
+            ...(process.env.NODE_ENV === 'development' && {
+              sendVerificationRequest({ identifier, url }) {
+                console.log('\n🔐 MAGIC LINK AUTHENTICATION 🔐');
+                console.log(`📧 Email: ${identifier}`);
+                console.log(`🔗 URL: ${url}`);
+                console.log('\nℹ️ Copy and paste the URL into your browser to sign in\n');
+              },
+            }),
           }),
         ]
       : []),
@@ -60,10 +70,10 @@ export const authOptions: NextAuthOptions = {
         session.user = {
           ...session.user,
           id: token.id as string,
-          role: token.role,
-          segment: token.segment,
-          title: token.title,
-          department: token.department,
+          role: token.role as UserRole,
+          segment: token.segment as UserSegment,
+          title: token.title as string | null,
+          department: token.department as string | null,
         };
       }
       return session;
@@ -72,6 +82,21 @@ export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
   session: {
     strategy: 'jwt',
+    maxAge: 8 * 60 * 60, // 8 hours
+  },
+  events: {
+    async signIn({ user }) {
+      await prisma.activityLog.create({
+        data: {
+          actorId: user.id,
+          action: 'USER_LOGIN',
+          meta: { 
+            method: 'signin',
+            timestamp: new Date().toISOString() 
+          },
+        },
+      });
+    },
   },
   debug: process.env.NODE_ENV === 'development',
 };
