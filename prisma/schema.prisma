@@ -99,6 +99,48 @@ model User {
   // Activity
   activityLogs  ActivityLog[]
   notifications Notification[]
+  CEO    // Superadmin
+  PC     // People & Culture (Admin)
+  LEAD   // Leadership (Nominator/Voter/Rater)
+  STAFF  // Regular staff
+}
+
+enum UserSegment {
+  Language      // Language Division (Blues)
+  International // International (Greens)
+  Whole         // Whole school
+}
+
+model User {
+  id        String      @id @default(cuid())
+  email     String      @unique
+  name      String?
+  role      UserRole    @default(STAFF)
+  segment   UserSegment @default(Whole)
+  title     String?
+  department String?
+  emailVerified DateTime?
+  image     String?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  // Relations
+  accounts            Account[]
+  sessions            Session[]
+  
+  // EOM Relations
+  nominations         EomNomination[]      @relation("Nominator")
+  receivedNominations EomNomination[]      @relation("Nominee")
+  votes               EomVote[]
+  wins                EomWinner[]
+  
+  // MRE Relations
+  raterAssignments    MreAssignment[]      @relation("Rater")
+  targetAssignments   MreAssignment[]      @relation("Target")
+  
+  // Activity
+  activityLogs        ActivityLog[]
+  notifications       Notification[]
 
   @@map("users")
 }
@@ -115,6 +157,13 @@ model EomCategory {
   order       Int      @default(0)
   createdAt   DateTime @default(now())
 
+  id          String          @id @default(cuid())
+  name        String          @unique
+  description String?
+  active      Boolean         @default(true)
+  order       Int             @default(0)
+  createdAt   DateTime        @default(now())
+  
   nominations EomNomination[]
   votes       EomVote[]
   winners     EomWinner[]
@@ -141,6 +190,16 @@ model EomCycle {
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
 
+  id          String          @id @default(cuid())
+  year        Int
+  month       Int             // 1-12
+  term        String          // e.g., "2025-T1"
+  status      EomCycleStatus  @default(DRAFT)
+  openedAt    DateTime?
+  closedAt    DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  
   nominations EomNomination[]
   votes       EomVote[]
   winners     EomWinner[]
@@ -151,6 +210,7 @@ model EomCycle {
 
 model EomNomination {
   id           String    @id @default(cuid())
+  id           String      @id @default(cuid())
   cycleId      String
   categoryId   String
   nomineeId    String
@@ -165,6 +225,16 @@ model EomNomination {
   category  EomCategory @relation(fields: [categoryId], references: [id])
   nominee   User        @relation("Nominee", fields: [nomineeId], references: [id])
   nominator User        @relation("Nominator", fields: [nominatorId], references: [id])
+  reason       String      @db.Text
+  verifiedByPC Boolean     @default(false)
+  verifiedAt   DateTime?
+  verifiedById String?
+  createdAt    DateTime    @default(now())
+  
+  cycle     EomCycle     @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  category  EomCategory  @relation(fields: [categoryId], references: [id])
+  nominee   User         @relation("Nominee", fields: [nomineeId], references: [id])
+  nominator User         @relation("Nominator", fields: [nominatorId], references: [id])
 
   @@unique([cycleId, categoryId, nomineeId])
   @@map("eom_nominations")
@@ -178,6 +248,7 @@ model EomVote {
   nomineeId  String
   createdAt  DateTime @default(now())
 
+  
   cycle    EomCycle    @relation(fields: [cycleId], references: [id], onDelete: Cascade)
   category EomCategory @relation(fields: [categoryId], references: [id])
   voter    User        @relation(fields: [voterId], references: [id])
@@ -196,6 +267,7 @@ model EomWinner {
   announcedOn   DateTime?
   createdAt     DateTime  @default(now())
 
+  
   cycle    EomCycle    @relation(fields: [cycleId], references: [id], onDelete: Cascade)
   category EomCategory @relation(fields: [categoryId], references: [id])
   winner   User        @relation(fields: [winnerId], references: [id])
@@ -231,6 +303,17 @@ model MreCycle {
   assignments    MreAssignment[]
   weightMatrices MreWeightMatrix[]
   domainWeights  MreDomainWeight[]
+  id          String          @id @default(cuid())
+  code        String          @unique // e.g., "2024-R1"
+  opensAt     DateTime
+  closesAt    DateTime
+  status      MreCycleStatus  @default(DRAFT)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  
+  assignments     MreAssignment[]
+  weightMatrices  MreWeightMatrix[]
+  domainWeights   MreDomainWeight[]
 
   @@map("mre_cycles")
 }
@@ -240,6 +323,7 @@ model MreRaterContext {
   code  String @unique // CEO, PC, MANAGER, PEER, QA, HOD, PRINCIPAL, SELF
   label String
 
+  
   weightMatrices MreWeightMatrix[]
   domainWeights  MreDomainWeight[]
   assignments    MreAssignment[]
@@ -259,6 +343,17 @@ model MreWeightMatrix {
 
   cycle        MreCycle        @relation(fields: [cycleId], references: [id], onDelete: Cascade)
   raterContext MreRaterContext @relation(fields: [raterContextId], references: [id])
+  id              String         @id @default(cuid())
+  cycleId         String
+  targetGroup     MreTargetGroup
+  raterContextId  String
+  weight          Int            // percentage
+  required        Boolean        @default(true)
+  min             Int            @default(1)
+  max             Int?
+  
+  cycle         MreCycle        @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  raterContext  MreRaterContext @relation(fields: [raterContextId], references: [id])
 
   @@unique([cycleId, targetGroup, raterContextId])
   @@map("mre_weight_matrices")
@@ -269,6 +364,7 @@ model MreDomain {
   code  String @unique
   label String
 
+  
   domainWeights MreDomainWeight[]
   domainScores  MreDomainScore[]
 
@@ -286,6 +382,16 @@ model MreDomainWeight {
   cycle        MreCycle        @relation(fields: [cycleId], references: [id], onDelete: Cascade)
   raterContext MreRaterContext @relation(fields: [raterContextId], references: [id])
   domain       MreDomain       @relation(fields: [domainId], references: [id])
+  id              String         @id @default(cuid())
+  cycleId         String
+  targetGroup     MreTargetGroup
+  raterContextId  String
+  domainId        String
+  weight          Int            // percentage
+  
+  cycle         MreCycle        @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  raterContext  MreRaterContext @relation(fields: [raterContextId], references: [id])
+  domain        MreDomain       @relation(fields: [domainId], references: [id])
 
   @@unique([cycleId, targetGroup, raterContextId, domainId])
   @@map("mre_domain_weights")
@@ -311,6 +417,20 @@ model MreAssignment {
   target       User            @relation("Target", fields: [targetId], references: [id])
   raterContext MreRaterContext @relation(fields: [raterContextId], references: [id])
   evaluation   MreEvaluation?
+  id              String              @id @default(cuid())
+  cycleId         String
+  raterId         String
+  targetId        String
+  raterContextId  String
+  status          MreAssignmentStatus @default(PENDING)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  
+  cycle         MreCycle        @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  rater         User            @relation("Rater", fields: [raterId], references: [id])
+  target        User            @relation("Target", fields: [targetId], references: [id])
+  raterContext  MreRaterContext @relation(fields: [raterContextId], references: [id])
+  evaluation    MreEvaluation?
 
   @@unique([cycleId, raterId, targetId, raterContextId])
   @@map("mre_assignments")
@@ -322,6 +442,11 @@ model MreEvaluation {
   composite    Decimal  @db.Decimal(5, 2)
   submittedAt  DateTime @default(now())
 
+  id            String   @id @default(cuid())
+  assignmentId  String   @unique
+  composite     Decimal  @db.Decimal(5, 2)
+  submittedAt   DateTime @default(now())
+  
   assignment   MreAssignment    @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
   domainScores MreDomainScore[]
 
@@ -334,6 +459,11 @@ model MreDomainScore {
   domainId     String
   score        Int // 1-5 Likert scale
 
+  id            String @id @default(cuid())
+  evaluationId  String
+  domainId      String
+  score         Int    // 1-5 Likert scale
+  
   evaluation MreEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
   domain     MreDomain     @relation(fields: [domainId], references: [id])
 
@@ -352,6 +482,7 @@ model ActivityLog {
   meta      Json?
   createdAt DateTime @default(now())
 
+  
   actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
 
   @@map("activity_logs")
@@ -374,6 +505,13 @@ model Notification {
   sentAt  DateTime  @default(now())
   readAt  DateTime?
 
+  id        String    @id @default(cuid())
+  userId    String
+  type      String
+  payload   Json
+  sentAt    DateTime  @default(now())
+  readAt    DateTime?
+  
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("notifications")
